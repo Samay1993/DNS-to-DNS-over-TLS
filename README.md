@@ -10,7 +10,7 @@ To run this project:
 * Start a new container in the same network(Let's say using Ubuntu machine), run below commands:
   - docker run --rm --network testNetwork -it ubuntu
   - apt update
-  - apt install dnsutils
+  - apt install dnsutils -y
 * You can test this by making dig request
   - dig @172.168.1.2 -p 53 google.com
 * On successful response server will give 200 response code and inside Ubuntu container you will see the result.
