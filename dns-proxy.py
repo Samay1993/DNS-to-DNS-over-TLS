@@ -1,19 +1,7 @@
 import socket
 import ssl
 import binascii
-
-# Add length to DNS query datagram
-def add_length(dns_query):
-    pre_length = b"\x00" + bytes([len(dns_query)])
-    query = pre_length + dns_query
-    return query
-
-# Send DNS query to Cloudflare server over TLS
-def send_query(tls_conn_sock, dns_query):
-    tcp_query = add_length(dns_query)
-    tls_conn_sock.send(tcp_query)
-    result = tls_conn_sock.recv(1024)
-    return result
+import threading
 
 # Establish a TLS connection with the Cloudflare server
 def establish_tls_connection(dns):
@@ -26,15 +14,18 @@ def establish_tls_connection(dns):
     tls_sock.connect((dns, 853))
     return tls_sock
 
-# Handle incoming DNS requests
-def handle_dns_request(data, address, dns):
-    print("Handeling request...")
+# Handle incoming TCP connections
+def handle_tcp_connection(conn, addr, dns):
+    print("Handling connection from", addr)
+    # Receive incoming DNS request
+    data = conn.recv(1024)
     # Establish a TLS connection with the Cloudflare server
     tls_conn_sock = establish_tls_connection(dns)
     print("TLS connection with Cloudflare established.")
     # Send DNS query to Cloudflare server over TLS
-    tcp_result = send_query(tls_conn_sock, data)
     print("Sending query....")
+    tls_conn_sock.send(data)
+    tcp_result = tls_conn_sock.recv(1024)
     # Check the response
     print("Checking for response now....")
     if tcp_result:
@@ -44,12 +35,14 @@ def handle_dns_request(data, address, dns):
             # Not a DNS query
             print("This is not a DNS query")
         else:
-            # Send the response back to the client over UDP
-            udp_result = tcp_result[2:]
-            s.sendto(udp_result, address)
+            # Send the response back to the client over TCP
+            conn.send(tcp_result)
             print("Response received: 200")
     else:
-        print("This is not a DNS query")
+        print("No TCP result received...")
+    # Close the connection
+    conn.close()
+    print("Connection closed")
 
 if __name__ == '__main__':
     DNS = '1.1.1.1' # Cloudflare DNS server IP
@@ -57,13 +50,14 @@ if __name__ == '__main__':
     host = '172.168.1.2' # Server IP
     print("[SERVER] started.....")
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((host, port))
+        s.listen(5)
         while True:
-            # Receive incoming DNS request
-            data, addr = s.recvfrom(1024)
-            # Handle the DNS request
-            handle_dns_request(data, addr, DNS)
+            # Wait for incoming TCP connection
+            conn, addr = s.accept()
+            # Handle the TCP connection in a new thread
+            threading.Thread(target=handle_tcp_connection, args=(conn, addr, DNS)).start()
     except OSError as e:
         print(e)
     finally:
